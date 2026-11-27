@@ -36,6 +36,18 @@ namespace AmaknaProxy.API.Network
                     using (var clientStream = new NetworkStream(client))
                     using (NetworkStream serverStream = server.GetStream())
                     {
+                        // Le serveur parle en premier : "BNOI..." = connexion de jeu en Noise, sinon login en clair.
+                        byte[] peeked = await NoiseBridge.PeekAsync(serverStream).ConfigureAwait(false);
+                        if (NoiseBridge.IsNoise(peeked))
+                        {
+                            ConsoleManager.Info("[Relais TCP] Connexion Noise détectée : pont en clair côté client.");
+                            var bridge = new NoiseBridge { PacketFilter = OnPlainPacket };
+                            await bridge.RunAsync(clientStream, serverStream, peeked).ConfigureAwait(false);
+                            return;
+                        }
+
+                        await clientStream.WriteAsync(peeked, 0, peeked.Length).ConfigureAwait(false);
+
                         Task toServer = CopyAsync(clientStream, serverStream, upstream, fromClient: true);
                         Task toClient = CopyAsync(serverStream, clientStream, client, fromClient: false);
                         Task first = await Task.WhenAny(toServer, toClient).ConfigureAwait(false);
@@ -63,6 +75,20 @@ namespace AmaknaProxy.API.Network
                     }
                 }
             }
+        }
+
+        // Appelé pour chaque paquet EN CLAIR (en-tête + corps) du pont Noise. Retourner null pour l'avaler.
+        private static byte[] OnPlainPacket(bool fromClient, byte[] packet)
+        {
+            try
+            {
+                Wire.ParsePacket(fromClient, packet, out int id, out byte[] body);
+                ConsoleManager.PostRelayMessage(fromClient, id, MustamMessageNames.GetName(id), body.Length);
+                // Pour décoder le contenu avec ton protocole :
+                // var msg = MessageReceiver.BuildMessage((uint)id, new AmaknaProxy.API.IO.BigEndianReader(body));
+            }
+            catch (Exception) { /* l'observation ne doit jamais casser le relais */ }
+            return packet;
         }
 
         private static async Task CopyAsync(NetworkStream source, NetworkStream destination, Socket destinationSocket, bool fromClient)

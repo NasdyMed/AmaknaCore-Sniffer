@@ -95,6 +95,7 @@
     <Compile Include="Network\SimpleClient.cs" />
     <Compile Include="Network\SimpleServer.cs" />
     <Compile Include="Network\TcpRelay.cs" />
+    <Compile Include="Network\NoiseBridge.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Protocol\Enums\AccessoryPreviewErrorEnum.cs" />

@@ -43,6 +43,13 @@ namespace AmaknaProxy.Hooks
             }
             catch (Exception ex) { _interface.OnError(ex); }
 
+            try
+            {
+                NoiseClientHooks.LogSink = msg => _interface.Message("[NoiseClientHooks] " + msg);
+                NoiseClientHooks.InstallWhenReady();
+            }
+            catch (Exception ex) { _interface.OnError(ex); }
+
             WakeUpProcess();
             while (true) Thread.Sleep(1000);
         }

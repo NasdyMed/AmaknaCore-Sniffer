@@ -10,11 +10,16 @@ namespace AmaknaProxy.Hooks
     {
         private int _count;
 
-        public void NotifyInstalled(string processName) => Console.WriteLine($"Successfully injected to {processName}.exe !");
+        /// <summary>Renseigné par le Sniffer (processus hôte du canal IPC) pour afficher les messages dans sa console.</summary>
+        public static Action<string> Sink;
 
-        public void Message(string message) => Console.WriteLine(message);
+        private static void Write(string text) { if (Sink != null) Sink(text); else Console.WriteLine(text); }
 
-        public void OnError(Exception ex) => Console.WriteLine(ex.ToString());
+        public void NotifyInstalled(string processName) => Write($"Successfully injected to {processName}.exe !");
+
+        public void Message(string message) => Write(message);
+
+        public void OnError(Exception ex) => Write(ex.ToString());
 
         /// <summary>
         /// Called to confirm that the IPC channel is still open / host application has not closed

@@ -54,6 +54,7 @@ namespace AmaknaProxy.Engine.Utils.Injector
 
         public AutoInjector(string processName, string filePath, ContainerLogger logger)
         {
+            HookInterface.Sink = text => ConsoleManager.Info(text);
             RemoteHooking.IpcCreateServer<HookInterface>(ref ChannelName, WellKnownObjectMode.Singleton);
             PatchedClients = new List<int>();
             ProcessName = processName;

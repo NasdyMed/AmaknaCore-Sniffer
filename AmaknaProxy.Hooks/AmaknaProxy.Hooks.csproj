@@ -47,6 +47,7 @@
   <ItemGroup>
     <Compile Include="HookInterface.cs" />
     <Compile Include="Main.cs" />
+    <Compile Include="NoiseClientHooks.cs" />
     <Compile Include="NativeSocketMethods.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
