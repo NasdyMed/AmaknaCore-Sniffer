@@ -18,6 +18,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Threading;
 using EasyHook;
+using System.Runtime.ExceptionServices;
 
 namespace AmaknaProxy.Hooks
 {
@@ -28,9 +29,9 @@ namespace AmaknaProxy.Hooks
 
         // Adresses « intérieures » (retour d'appel) découvertes par backtrace ; le début de fonction est retrouvé en
         // remontant jusqu'au padding 0xCC 0xCC qui précède.
-        private const long SealInterior = 0x3e78;
-        private const long OpenInterior = 0x2eff;
-        private const long RhrInterior = 0x65ec;
+        private const long SealStart = 0x1C140;
+        private const long OpenStart = 0x1B8A0;
+        private const long RhrStart = 0x1F160;
 
         private const int Tag = 16;
         private const int MaxChunk = 65519;
@@ -88,14 +89,9 @@ namespace AmaknaProxy.Hooks
             freGetUint = Bind<FreGetObjectAsUint32>(air, "FREGetObjectAsUint32");
             freNewBool = Bind<FreNewObjectFromBool>(air, "FRENewObjectFromBool");
 
-            IntPtr seal = FuncStart(Add(ane, SealInterior));
-            IntPtr open = FuncStart(Add(ane, OpenInterior));
-            IntPtr rhr = FuncStart(Add(ane, RhrInterior));
-            if (seal == IntPtr.Zero || open == IntPtr.Zero || rhr == IntPtr.Zero)
-            {
-                Log("début de fonction introuvable (offsets à redécouvrir ?)");
-                return false;
-            }
+            IntPtr seal = Add(ane, SealStart);
+            IntPtr open = Add(ane, OpenStart);
+            IntPtr rhr = Add(ane, RhrStart);
 
             Detour(seal, new FreFunction(SealPacket));
             Detour(open, new FreFunction(OpenPacket));
@@ -109,6 +105,8 @@ namespace AmaknaProxy.Hooks
         // ─────────────────────────────── les 3 remplacements ───────────────────────────────
 
         // sealPacket(argv[1] = ByteArray en-tête+corps, argv[2] = longueur d'en-tête)
+        [HandleProcessCorruptedStateExceptions]
+        [System.Security.SecurityCritical]
         private static IntPtr SealPacket(IntPtr ctx, IntPtr funcData, uint argc, IntPtr argv)
         {
             try
@@ -119,7 +117,7 @@ namespace AmaknaProxy.Hooks
 
                 int bodyLen = plain.Length - headerLen;
                 int chunks = bodyLen == 0 ? 1 : (bodyLen + MaxChunk - 1) / MaxChunk;
-                var output = new byte[headerLen + bodyLen + chunks * Tag]; // pads = zéros
+                var output = new byte[headerLen + bodyLen + chunks * Tag];
                 Buffer.BlockCopy(plain, 0, output, 0, headerLen);
                 int dst = headerLen;
                 for (int i = 0; i < chunks; i++)
@@ -130,10 +128,21 @@ namespace AmaknaProxy.Hooks
                 }
                 return NewBA(output);
             }
-            catch (Exception ex) { Log("seal : " + ex.Message); return IntPtr.Zero; }
+            catch (AccessViolationException avEx)
+            {
+                Log("seal : ACCESS VIOLATION — " + avEx.Message + Environment.NewLine + avEx.StackTrace);
+                return IntPtr.Zero;
+            }
+            catch (Exception ex)
+            {
+                Log("seal : " + ex.GetType().Name + " — " + ex.Message);
+                return IntPtr.Zero;
+            }
         }
 
         // openPacket(argv[1] = ByteArray reçu, argv[2] = longueur d'en-tête, argv[3] = longueur du corps clair)
+        [HandleProcessCorruptedStateExceptions]
+        [System.Security.SecurityCritical]
         private static IntPtr OpenPacket(IntPtr ctx, IntPtr funcData, uint argc, IntPtr argv)
         {
             try
@@ -155,14 +164,29 @@ namespace AmaknaProxy.Hooks
                 }
                 return NewBA(output);
             }
+            catch (AccessViolationException avEx)
+            {
+                Log("open : ACCESS VIOLATION — " + avEx.Message + Environment.NewLine + avEx.StackTrace);
+                return IntPtr.Zero;
+            }
             catch (Exception ex) { Log("open : " + ex.Message); return IntPtr.Zero; }
         }
 
         // readHandshakeResponse -> true : le client accepte la réponse « jetable » du proxy
+        [HandleProcessCorruptedStateExceptions]
+        [System.Security.SecurityCritical]
         private static IntPtr ReadHandshakeResponse(IntPtr ctx, IntPtr funcData, uint argc, IntPtr argv)
         {
-            IntPtr res;
-            return freNewBool(1, out res) == 0 ? res : IntPtr.Zero;
+            try
+            {
+                IntPtr res;
+                return freNewBool(1, out res) == 0 ? res : IntPtr.Zero;
+            }
+            catch (AccessViolationException avEx)
+            {
+                Log("open : ACCESS VIOLATION — " + avEx.Message + Environment.NewLine + avEx.StackTrace);
+                return IntPtr.Zero;
+            }
         }
 
         // ─────────────────────────────── FRE / mémoire ───────────────────────────────
@@ -240,7 +264,7 @@ namespace AmaknaProxy.Hooks
         private static void Detour(IntPtr target, Delegate replacement)
         {
             var hook = LocalHook.Create(target, replacement, null);
-            hook.ThreadACL.SetExclusiveACL(new[] { 0 }); // hooke tous les threads (le thread AS3/AIR en particulier)
+            hook.ThreadACL.SetExclusiveACL(new[] { EasyHook.RemoteHooking.GetCurrentThreadId() }); // hooke tous les threads (le thread AS3/AIR en particulier)
             keepAlive.Add(replacement);
             keepAlive.Add(hook);
         }
